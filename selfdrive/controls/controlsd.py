@@ -15,7 +15,7 @@ from panda import ALTERNATIVE_EXPERIENCE
 from system.swaglog import cloudlog
 from system.version import is_release_branch, get_short_branch
 from selfdrive.boardd.boardd import can_list_to_can_capnp
-from selfdrive.car.car_helpers import get_car, get_startup_event, get_one_can
+from selfdrive.car.car_helpers import get_car, get_startup_event, get_one_can, get_ti
 from selfdrive.controls.lib.lane_planner import CAMERA_OFFSET
 from selfdrive.controls.lib.drive_helpers import VCruiseHelper, get_lag_adjusted_curvature
 from selfdrive.controls.lib.latcontrol import LatControl, MIN_LATERAL_CONTROL_SPEED
@@ -120,6 +120,7 @@ class Controls:
 
     if self.CP.customStockLongAvailable and self.CP.pcmCruise and self.params.get_bool("CustomStockLong"):
       self.CP.pcmCruiseSpeed = False
+    self.ti_ready = False
 
     # read params
     self.is_metric = self.params.get_bool("IsMetric")
@@ -354,6 +355,12 @@ class Controls:
       if log.PandaState.FaultType.relayMalfunction in pandaState.faults:
         self.events.add(EventName.relayMalfunction)
 
+      if pandaState.torqueInterceptorDetected and not self.ti_ready:
+        self.ti_ready = True
+        self.CP.enableTorqueInterceptor = True
+        #Update CP based on torque_interceptor_ready
+        self.CP = get_ti()
+        
     # Handle HW and system malfunctions
     # Order is very intentional here. Be careful when modifying this.
     # All events here should at least have NO_ENTRY and SOFT_DISABLE.
