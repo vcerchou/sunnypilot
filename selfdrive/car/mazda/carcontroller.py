@@ -144,7 +144,10 @@ class CarController:
     # always send to the stock system
     can_sends.append(mazdacan.create_steering_control(self.packer, self.CP.carFingerprint,
                                                       self.frame, apply_steer, CS.cam_lkas))
-
+    """ACC RADAR COMMAND"""                                                    
+    if self.frame % 2 == 0:
+      can_sends.extend(mazdacan.create_radar_command(self.packer, CS.CP.carFingerprint, self.frame, CC, CS))
+      
     new_actuators = CC.actuators.copy()
     new_actuators.steer = apply_steer / CarControllerParams.STEER_MAX
     new_actuators.steerOutputCan = apply_steer
