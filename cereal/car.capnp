@@ -475,6 +475,7 @@ struct CarParams {
   pcmCruiseSpeed @72 :Bool;  # is openpilot's state tied to the PCM's cruise speed?
   customStockLongAvailable @73 :Bool;
   spFlags @74 :UInt32;       # flags for car specific quirks in sunnypilot
+  enableTorqueInterceptor @75 :Bool;
 
   minEnableSpeed @7 :Float32;
   minSteerSpeed @8 :Float32;

@@ -3,7 +3,7 @@ from common.conversions import Conversions as CV
 from opendbc.can.can_define import CANDefine
 from opendbc.can.parser import CANParser
 from selfdrive.car.interfaces import CarStateBase
-from selfdrive.car.mazda.values import DBC, LKAS_LIMITS, GEN1, BUTTON_STATES
+from selfdrive.car.mazda.values import DBC, LKAS_LIMITS, GEN1, BUTTON_STATES, TI_STATE
 
 class CarState(CarStateBase):
   def __init__(self, CP):
@@ -24,7 +24,14 @@ class CarState(CarStateBase):
     self.buttonStates = BUTTON_STATES.copy()
     self.buttonStatesPrev = BUTTON_STATES.copy()
 
-  def update(self, cp, cp_cam):
+    self.ti_ramp_down = False
+    self.ti_version = 1
+    self.ti_state = TI_STATE.RUN
+    self.ti_violation = 0
+    self.ti_error = 0
+    self.ti_lkas_allowed = False
+
+  def update(self, cp, cp_cam, cp_body):
 
     ret = car.CarState.new_message()
 
@@ -56,9 +63,22 @@ class CarState(CarStateBase):
     ret.leftBlinker, ret.rightBlinker = ret.leftBlinkerOn, ret.rightBlinkerOn = self.update_blinker_from_lamp(40, cp.vl["BLINK_INFO"]["LEFT_BLINK"] == 1,
                                                                                                                   cp.vl["BLINK_INFO"]["RIGHT_BLINK"] == 1)
 
-    ret.steeringAngleDeg = cp.vl["STEER"]["STEER_ANGLE"]
-    ret.steeringTorque = cp.vl["STEER_TORQUE"]["STEER_TORQUE_SENSOR"]
-    ret.steeringPressed = abs(ret.steeringTorque) > LKAS_LIMITS.STEER_THRESHOLD
+    if self.CP.enableTorqueInterceptor:
+      ret.steeringTorque = cp_body.vl["TI_FEEDBACK"]["TI_TORQUE_SENSOR"]
+      self.ti_version = cp_body.vl["TI_FEEDBACK"]["VERSION_NUMBER"]
+      self.ti_state = cp_body.vl["TI_FEEDBACK"]["STATE"] # DISCOVER = 0, OFF = 1, DRIVER_OVER = 2, RUN=3
+      self.ti_violation = cp_body.vl["TI_FEEDBACK"]["VIOL"] # 0 = no violation
+      self.ti_error = cp_body.vl["TI_FEEDBACK"]["ERROR"] # 0 = no error
+      if self.ti_version > 1:
+        self.ti_ramp_down = (cp_body.vl["TI_FEEDBACK"]["RAMP_DOWN"] == 1)
+
+      ret.steeringPressed = abs(ret.steeringTorque) > LKAS_LIMITS.TI_STEER_THRESHOLD
+      self.ti_lkas_allowed = not self.ti_ramp_down and self.ti_state == TI_STATE.RUN
+    else:
+      ret.steeringTorque = cp.vl["STEER_TORQUE"]["STEER_TORQUE_SENSOR"]
+      ret.steeringPressed = abs(ret.steeringTorque) > LKAS_LIMITS.STEER_THRESHOLD
+
+    ret.steeringAngleDeg = cp.vl["STEER"]["STEER_ANGLE"]  
 
     ret.steeringTorqueEps = cp.vl["STEER_TORQUE"]["STEER_TORQUE_MOTOR"]
     ret.steeringRateDeg = cp.vl["STEER_RATE"]["STEER_ANGLE_RATE"]
@@ -190,7 +210,21 @@ class CarState(CarStateBase):
         ("GEAR", 20),
         ("BSM", 10),
       ]
+    # get real driver torque if we are using a torque interceptor
+    if CP.enableTorqueInterceptor:
+      signals += [
+        ("TI_TORQUE_SENSOR", "TI_FEEDBACK", 0),
+        ("CHKSUM", "TI_FEEDBACK", 0),
+        ("VERSION_NUMBER", "TI_FEEDBACK", 0),
+        ("STATE", "TI_FEEDBACK", 0),
+        ("VIOL", "TI_FEEDBACK", 0),
+        ("ERROR", "TI_FEEDBACK", 0),
+        ("RAMP_DOWN", "TI_FEEDBACK", 0),
+      ]
 
+      checks += [
+        ("TI_FEEDBACK", 100),
+      ]
     return CANParser(DBC[CP.carFingerprint]["pt"], signals, checks, 0)
 
   @staticmethod
@@ -229,3 +263,26 @@ class CarState(CarStateBase):
       ]
 
     return CANParser(DBC[CP.carFingerprint]["pt"], signals, checks, 2)
+
+  @staticmethod
+  def get_body_can_parser(CP):
+    # this function generates lists for signal, messages and initial values
+    signals = []
+    checks = []
+    # get real driver torque if we are using a torque interceptor
+    if CP.enableTorqueInterceptor:
+      signals += [
+        ("TI_TORQUE_SENSOR", "TI_FEEDBACK", 0),
+        ("CHKSUM", "TI_FEEDBACK", 0),
+        ("VERSION_NUMBER", "TI_FEEDBACK", 0),
+        ("STATE", "TI_FEEDBACK", 0),
+        ("VIOL", "TI_FEEDBACK", 0),
+        ("ERROR", "TI_FEEDBACK", 0),
+        ("RAMP_DOWN", "TI_FEEDBACK", 0),
+      ]
+
+      checks += [
+        ("TI_FEEDBACK", 50),
+      ]
+
+    return CANParser(DBC[CP.carFingerprint]["pt"], signals, checks, 1) # changed to back to 0 because my OBD2 port works

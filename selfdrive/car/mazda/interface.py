@@ -4,6 +4,7 @@ from common.conversions import Conversions as CV
 from selfdrive.car.mazda.values import CAR, LKAS_LIMITS, BUTTON_STATES
 from selfdrive.car import STD_CARGO_KG, scale_tire_stiffness, get_safety_config, create_mads_event
 from selfdrive.car.interfaces import CarInterfaceBase
+from selfdrive.global_ti import TI
 
 ButtonType = car.CarState.ButtonEvent.Type
 EventName = car.CarEvent.EventName
@@ -21,7 +22,7 @@ class CarInterface(CarInterfaceBase):
     ret.radarUnavailable = True
     ret.customStockLongAvailable = True
 
-    ret.dashcamOnly = candidate not in (CAR.CX5_2022, CAR.CX9_2021)
+    ret.dashcamOnly = False
 
     ret.steerActuatorDelay = 0.1
     ret.steerLimitTimer = 0.8
@@ -60,7 +61,13 @@ class CarInterface(CarInterfaceBase):
 
   # returns a car.CarState
   def _update(self, c):
-    ret = self.CS.update(self.cp, self.cp_cam)
+    if self.CP.enableTorqueInterceptor and not TI.enabled:
+      TI.enabled = True
+      self.cp_body = self.CS.get_body_can_parser(self.CP)
+      self.can_parsers = [self.cp, self.cp_cam, self.cp_adas, self.cp_body, self.cp_loopback]
+
+    ret = self.CS.update(self.cp, self.cp_cam, self.cp_body)
+
     self.CS = self.sp_update_params(self.CS)
 
     buttonEvents = []
@@ -127,7 +134,9 @@ class CarInterface(CarInterfaceBase):
     ret.customStockLong = self.CS.update_custom_stock_long(self.CC.cruise_button, self.CC.final_speed_kph,
                                                            self.CC.target_speed, self.CC.v_set_dis,
                                                            self.CC.speed_diff, self.CC.button_type)
-
+    if not self.CS.acc_active_last and not self.CS.ti_lkas_allowed:
+      events.add(EventName.steerTempUnavailable)
+      
     ret.events = events.to_msg()
 
     self.buttonStatesPrev = self.CS.buttonStates.copy()
