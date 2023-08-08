@@ -644,6 +644,7 @@ class Panda:
       "sbu1_voltage_mV": a[25],
       "sbu2_voltage_mV": a[26],
       "controls_allowed_long": a[27],
+      "torque_interceptor_detected": a[28],
     }
 
   @ensure_can_health_packet_version
